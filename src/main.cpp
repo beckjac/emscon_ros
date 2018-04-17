@@ -1,5 +1,6 @@
+// main.cpp
 
-#include <ros.h>
+#include <ros/ros.h>
 #include <boost/asio.hpp> // Provides sockets
 #include <emscon_ros/ES_CPP_API_Def.h> // Emscon API
 
@@ -7,21 +8,18 @@
 class EmsconCommand : public CESAPICommand
 {
 // Members
-  boost::asio::ip::tcp::socket sock;
+  boost::shared_ptr<boost::asio::ip::tcp::socket> socket_;
 
 // Construction
 public:
-  EmsconCommand(boost::asio::ip::tcp::socket socket)
-  {
-    sock = socket;
-  } 
-  ~EmsconCommand() {;}
+  EmsconCommand(boost::shared_ptr<boost::asio::ip::tcp::socket> socket) : socket_(socket) {} 
+  ~EmsconCommand(){}
 
 protected:
   // CESAPICommand's virtual function override
   virtual bool SendPacket(void* pPacketStart, long lPacketSize) 
   {
-    long sentData = sock.write(boost::asio::buffer((const char*)pPacketStart, lPacketSize));
+    long sentData = boost::asio::write(*socket_, boost::asio::buffer((const char*)pPacketStart, lPacketSize));
     
     if(sentData != lPacketSize)
     {
@@ -113,11 +111,12 @@ protected:
                              const ES_TargetType targetType,
                              const double dSurfaceOffset,
                              const unsigned short cReflectorName[32]) 
-  {  // cReflectorName[] is UNICODE by convention. Quick and Dirty Unicode to Ansi conversion:
+  {
+    // cReflectorName[] is UNICODE by convention. Quick and Dirty Unicode to Ansi conversion:
     const int size = 32; char buf[size];
 
     for (int i = 0; i < size; i++)
-      buf[i] = LOBYTE(cReflectorName[i]);
+      buf[i] = cReflectorName[i] & 0xff;
       
     printf("OnGetReflectorsAnswer(): total=%d, id=%d, type=%d, offset=%lf, name=%s\n", 
       iTotalReflectors, iInternalReflectorId, targetType, dSurfaceOffset, buf);
@@ -134,6 +133,17 @@ protected:
   //       then the particular command handler will not be called!
 };
 
+class EmsconInterface
+{
+  // Members
+  EmsconCommand cmd;
+  EmsconReceive recv;
+  
+public:
+  EmsconInterface(boost::shared_ptr<boost::asio::ip::tcp::socket> socket) : cmd(socket) {}
+  ~EmsconInterface() {}
+};
+
 int main(int argc, char* argv[])
 {
   // Connect socket
@@ -142,13 +152,12 @@ int main(int argc, char* argv[])
   
   boost::asio::io_service ios;
   boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string(host), port);
-  boost::asio::ip::tcp::socket socket(ios);
   
-  socket.connect(endpoint);
+  boost::shared_ptr<boost::asio::ip::tcp::socket> socket(new boost::asio::ip::tcp::socket(ios));
+  socket->connect(endpoint);
   
   // Instantiate interface classes
-  EmsconCommand command;
-  EmsconReceive receive;
+  EmsconInterface interface(socket);
   
   // Initialize laser
   
