@@ -135,17 +135,66 @@ protected:
 
 class EmsconInterface
 {
-  // Members
-  EmsconCommand cmd;
-  EmsconReceive recv;
-  
 public:
-  EmsconInterface(boost::shared_ptr<boost::asio::ip::tcp::socket> socket) : cmd(socket) {}
-  ~EmsconInterface() {}
+  EmsconInterface(boost::shared_ptr<boost::asio::ip::tcp::socket> socket, ros::NodeHandlePtr nodeHandle) :
+  cmd_(socket), recv_(nodeHandle), socket_(socket)
+  {
+    // Spawn reciever thread
+    recv_thread_ = boost::thread(this->receivePackets);
+    
+    // Start collecting data
+    cmd_.StartMeasurement();
+  }
+  ~EmsconInterface()
+  {
+    // Stop thread
+    recv_thread_.join();
+  }
+  
+protected:
+  // Members
+  EmsconCommand cmd_;
+  EmsconReceive recv_;
+  
+  boost::shared_ptr<boost::asio::ip::tcp::socket> socket_;
+  boost::thread recv_thread_;
+  
+  // Functions
+  void receivePackets()
+  {
+    int packet_size_bytes = sizeof(long);
+    boost::asio::streambuf buff;
+    
+    while(true)
+    {
+      // Read into buffer
+      boost::asio::read_some(*socket_, buff);
+      
+      size_t n = socket_->read_some(buff)
+      buff.commit(n);
+      
+      // Check we have enough bytes to measure packet size
+      long ready_bytes = socket_->available();
+      if(readyBytes < packet_size_bytes)
+        continue;
+      
+      // Check if whole packet has arrived
+      
+    
+      // Pass data to API
+      bool success = recv_.ReceiveData(buffer, numBytes);
+      if(!success)
+        ROS_ERROR_STREAM("Failed to receive Emscon data");
+    }
+  }
 };
 
 int main(int argc, char* argv[])
 {
+  // Setup ROS
+  ros::init(argc, argv, "emscon_ros_node");
+  ros::NodeHandlePtr nodeHandle = boost::make_shared<ros::NodeHandle>();
+  
   // Connect socket
   std::string host = "192.168.0.1";
   int port = 700;
@@ -153,16 +202,14 @@ int main(int argc, char* argv[])
   boost::asio::io_service ios;
   boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string(host), port);
   
-  boost::shared_ptr<boost::asio::ip::tcp::socket> socket(new boost::asio::ip::tcp::socket(ios));
+  boost::shared_ptr<boost::asio::ip::tcp::socket> socket = boost::make_shared<boost::asio::ip::tcp::socket>(boost::ref(ios));
   socket->connect(endpoint);
   
   // Instantiate interface classes
-  EmsconInterface interface(socket);
-  
-  // Initialize laser
+  EmsconInterface interface(socket, nodeHandle);
   
   // Start publishing
-  while(true)
+  while(ros::ok())
   {
     ios.poll();
     //nh.spinOnce();
