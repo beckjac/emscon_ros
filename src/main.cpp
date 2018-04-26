@@ -1,7 +1,12 @@
 // main.cpp
 
+#include <vector>
+
 #include <ros/ros.h>
+
 #include <boost/asio.hpp> // Provides sockets
+#include <boost/thread.hpp>
+
 #include <emscon_ros/ES_CPP_API_Def.h> // Emscon API
 
 // Class for command interface
@@ -36,7 +41,8 @@ protected:
 class EmsconReceive: public CESAPIReceive
 {
 public:
-  EmsconReceive() {;} 
+  EmsconReceive(ros::NodeHandlePtr node_handle) : node_handle_(node_handle)
+  {;} 
   ~EmsconReceive() {;} 
 
   // make protected ReceiveData() accessible from outside (i.e. define a public overhead)
@@ -52,6 +58,9 @@ public:
   // override virtual functions of those answers you are interested in:
 
 protected:
+  // Members
+  ros::NodeHandlePtr node_handle_;
+
   // general and unsolicited answer handlers:
 
   void OnCommandAnswer(const BasicCommandRT& cmd) // called for every command
@@ -140,7 +149,7 @@ public:
   cmd_(socket), recv_(nodeHandle), socket_(socket)
   {
     // Spawn reciever thread
-    recv_thread_ = boost::thread(this->receivePackets);
+    recv_thread_ = boost::thread(boost::bind(&EmsconInterface::receivePackets, this));
     
     // Start collecting data
     cmd_.StartMeasurement();
@@ -162,27 +171,37 @@ protected:
   // Functions
   void receivePackets()
   {
-    int packet_size_bytes = sizeof(long);
-    boost::asio::streambuf buff;
+    int header_size = sizeof(long);
+    std::vector<unsigned char> buffer;
+    std::vector<unsigned char> packet;
     
     while(true)
     {
-      // Read into buffer
-      boost::asio::read_some(*socket_, buff);
-      
-      size_t n = socket_->read_some(buff)
-      buff.commit(n);
-      
       // Check we have enough bytes to measure packet size
       long ready_bytes = socket_->available();
-      if(readyBytes < packet_size_bytes)
+      if(ready_bytes < header_size)
         continue;
       
-      // Check if whole packet has arrived
+      // Read into buffer
+      buffer.resize(header_size);
+      boost::asio::read(*socket_, boost::asio::buffer(buffer));
       
+      // Transfer to packet
+      packet = buffer;
+      
+      // Check amount of data to read
+      PacketHeaderT *header = (PacketHeaderT*)packet.data(); // Cast buffer to header
+      long body_bytes = header->lPacketSize;
+      
+      // Read full message
+      buffer.resize(body_bytes);
+      boost::asio::read(*socket_, boost::asio::buffer(buffer));
+      
+      // Transfer to packet
+      packet.insert(packet.end(), buffer.begin(), buffer.end());
     
       // Pass data to API
-      bool success = recv_.ReceiveData(buffer, numBytes);
+      bool success = recv_.ReceiveData(packet.data(), packet.size());
       if(!success)
         ROS_ERROR_STREAM("Failed to receive Emscon data");
     }
@@ -212,7 +231,7 @@ int main(int argc, char* argv[])
   while(ros::ok())
   {
     ios.poll();
-    //nh.spinOnce();
+    ros::spinOnce();
   }
   
   return 0;
