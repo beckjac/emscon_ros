@@ -151,8 +151,11 @@ public:
     // Spawn reciever thread
     recv_thread_ = boost::thread(boost::bind(&EmsconInterface::receivePackets, this));
     
+    // Initialize laser
+    initLaser(nodeHandle);
+    
     // Start collecting data
-    cmd_.StartMeasurement();
+    printf("Interface online\n");
   }
   ~EmsconInterface()
   {
@@ -169,13 +172,14 @@ protected:
   boost::thread recv_thread_;
   
   // Functions
+  // Worker thread to read socket
   void receivePackets()
   {
     int header_size = sizeof(long);
-    std::vector<unsigned char> buffer;
-    std::vector<unsigned char> packet;
+    std::vector<char> buffer;
+    std::vector<char> packet;
     
-    while(true)
+    while(ros::ok())
     {
       // Check we have enough bytes to measure packet size
       long ready_bytes = socket_->available();
@@ -192,6 +196,7 @@ protected:
       // Check amount of data to read
       PacketHeaderT *header = (PacketHeaderT*)packet.data(); // Cast buffer to header
       long body_bytes = header->lPacketSize;
+      ROS_INFO_STREAM("allocating " << body_bytes << " bytes");
       
       // Read full message
       buffer.resize(body_bytes);
@@ -205,6 +210,46 @@ protected:
       if(!success)
         ROS_ERROR_STREAM("Failed to receive Emscon data");
     }
+  }
+  
+  // Reads parameters from node handle to initialize laser
+  void initLaser(ros::NodeHandlePtr nodeHandle)
+  {
+    cmd_.SetUnits(ES_LU_Meter, ES_AU_Radian, ES_TU_Celsius, ES_PU_MmHg, ES_HU_RH);
+    //cmd_.SetEnvironmentParams(); // Just use defaults
+    
+    cmd_.Initialize();
+    
+    cmd_.SetMeasurementMode(ES_MM_ContinuousTime);
+    cmd_.SetContinuousTimeModeParams(20, 0, false, ES_RT_Sphere);
+    
+    //~ var = cmd_.GetReflectors();
+    //~ int id;
+    //~ for string in var
+    //~ {
+      //~ if string == "CCR-1_5IN_LEICAR"
+      //~ {
+        //~ id = num;
+        //~ break;
+      //~ }
+    //~ }
+    cmd_.SetReflector(0);
+    
+    cmd_.GoBirdBath();
+    
+    cmd_.SetStationOrientationParams(0, 0, 0, 0, 0, 0);
+    cmd_.SetTransformationParams(0, 0, 0, 0, 0, 0, 1);
+    cmd_.SetCoordinateSystemType(ES_CS_RHR);
+    
+    SystemSettingsDataT settings;
+    settings.bApplyTransformationParams = true;
+    settings.bApplyStationOrientationParams = true;
+    settings.bKeepLastPosition = true;
+    settings.bSendUnsolicitedMessages = true;
+    settings.bSendReflectorPositionData = false;
+    cmd_.SetSystemSettings(settings);
+    
+    cmd_.StartMeasurement();
   }
 };
 
