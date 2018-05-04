@@ -8,6 +8,7 @@
 #include <boost/thread.hpp>
 
 #include <emscon_ros/ES_CPP_API_Def.h> // Emscon API
+const int MAX_PACKET_SIZE = 64*1024;
 
 // Class for command interface
 class EmsconCommand : public CESAPICommand
@@ -145,14 +146,14 @@ protected:
 class EmsconInterface
 {
 public:
-  EmsconInterface(boost::shared_ptr<boost::asio::ip::tcp::socket> socket, ros::NodeHandlePtr nodeHandle) :
-  cmd_(socket), recv_(nodeHandle), socket_(socket)
+  EmsconInterface(boost::shared_ptr<boost::asio::ip::tcp::socket> socket, ros::NodeHandlePtr node_handle) :
+  cmd_(socket), recv_(node_handle), socket_(socket)
   {
     // Spawn reciever thread
     recv_thread_ = boost::thread(boost::bind(&EmsconInterface::receivePackets, this));
     
     // Initialize laser
-    initLaser(nodeHandle);
+    initLaser(node_handle);
     
     // Start collecting data
     printf("Interface online\n");
@@ -195,25 +196,36 @@ protected:
       
       // Check amount of data to read
       PacketHeaderT *header = (PacketHeaderT*)packet.data(); // Cast buffer to header
-      long body_bytes = header->lPacketSize;
-      ROS_INFO_STREAM("allocating " << body_bytes << " bytes");
+      long packet_size = header->lPacketSize;
+      
+      if((ready_bytes != header_size) || (packet_size < header_size) || (packet_size > MAX_PACKET_SIZE))
+      {
+        ROS_WARN_STREAM("Indicated packet size is " << packet_size << ", discarding");
+        buffer.clear();
+        continue;
+      }
       
       // Read full message
-      buffer.resize(body_bytes);
+      buffer.resize(packet_size - header_size);
       boost::asio::read(*socket_, boost::asio::buffer(buffer));
       
       // Transfer to packet
       packet.insert(packet.end(), buffer.begin(), buffer.end());
+      if(packet.size() != packet_size)
+      {
+        ROS_WARN_STREAM("Didn't get expected amount of data");
+        continue;
+      }
     
       // Pass data to API
       bool success = recv_.ReceiveData(packet.data(), packet.size());
       if(!success)
-        ROS_ERROR_STREAM("Failed to receive Emscon data");
+        ROS_ERROR_STREAM("Failed to parse Emscon data");
     }
   }
   
   // Reads parameters from node handle to initialize laser
-  void initLaser(ros::NodeHandlePtr nodeHandle)
+  void initLaser(ros::NodeHandlePtr node_handle)
   {
     cmd_.SetUnits(ES_LU_Meter, ES_AU_Radian, ES_TU_Celsius, ES_PU_MmHg, ES_HU_RH);
     //cmd_.SetEnvironmentParams(); // Just use defaults
@@ -223,7 +235,7 @@ protected:
     cmd_.SetMeasurementMode(ES_MM_ContinuousTime);
     cmd_.SetContinuousTimeModeParams(20, 0, false, ES_RT_Sphere);
     
-    //~ var = cmd_.GetReflectors();
+    //~ = cmd_.GetReflectors();
     //~ int id;
     //~ for string in var
     //~ {
@@ -251,13 +263,18 @@ protected:
     
     cmd_.StartMeasurement();
   }
+  
+  void findReflector(std::string reflector_name)
+  {
+    
+  }
 };
 
 int main(int argc, char* argv[])
 {
   // Setup ROS
   ros::init(argc, argv, "emscon_ros_node");
-  ros::NodeHandlePtr nodeHandle = boost::make_shared<ros::NodeHandle>();
+  ros::NodeHandlePtr node_handle = boost::make_shared<ros::NodeHandle>();
   
   // Connect socket
   std::string host = "192.168.0.1";
@@ -270,7 +287,7 @@ int main(int argc, char* argv[])
   socket->connect(endpoint);
   
   // Instantiate interface classes
-  EmsconInterface interface(socket, nodeHandle);
+  EmsconInterface interface(socket, node_handle);
   
   // Start publishing
   while(ros::ok())
