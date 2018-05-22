@@ -186,16 +186,13 @@ protected:
       long ready_bytes = socket_->available();
       if(ready_bytes < header_size)
         continue;
-      ROS_INFO_STREAM("There are " << ready_bytes << " bytes available");
+      
       // Read into buffer
       buffer.resize(header_size);
       boost::asio::read(*socket_, boost::asio::buffer(buffer));
       
       // Transfer to packet
       packet = buffer;
-      
-      for(int i=0; i<packet.size(); i++)
-        ROS_INFO_STREAM((int)packet[i]);
       
       // Check amount of data to read
       PacketHeaderT *header = (PacketHeaderT*)packet.data(); // Cast buffer to header
@@ -223,8 +220,6 @@ protected:
       bool success = recv_.ReceiveData(packet.data(), packet.size());
       if(!success)
         ROS_ERROR_STREAM("Failed to parse Emscon data");
-      else
-        ROS_INFO_STREAM("Successful read");
     }
   }
   

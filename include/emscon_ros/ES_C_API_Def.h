@@ -31,6 +31,10 @@ related include file (of same name) that is delivered with the AT4xx SDK).
 
 #include "Enum.h" /* include 'Enum.h' PAST version symbol definition */
 
+// What I'm doing here is gross, but blame Leica for assuming long is always 4 bytes
+#include <stdint.h>
+#define long int32_t
+
 // For managed CPP applications, enum definitions require 
 // to be prefixed with a 'public __value' directive. 
 // To achieve this, define preprocessor symbol 'ES_MCPP_SUPPORT'
