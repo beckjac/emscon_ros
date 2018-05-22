@@ -156,7 +156,7 @@ public:
     initLaser(node_handle);
     
     // Start collecting data
-    printf("Interface online\n");
+    ROS_INFO_STREAM("Interface online");
   }
   ~EmsconInterface()
   {
@@ -176,7 +176,7 @@ protected:
   // Worker thread to read socket
   void receivePackets()
   {
-    int header_size = sizeof(long);
+    int header_size = 4;
     std::vector<char> buffer;
     std::vector<char> packet;
     
@@ -186,7 +186,7 @@ protected:
       long ready_bytes = socket_->available();
       if(ready_bytes < header_size)
         continue;
-      
+      ROS_INFO_STREAM("There are " << ready_bytes << " bytes available");
       // Read into buffer
       buffer.resize(header_size);
       boost::asio::read(*socket_, boost::asio::buffer(buffer));
@@ -194,14 +194,16 @@ protected:
       // Transfer to packet
       packet = buffer;
       
+      for(int i=0; i<packet.size(); i++)
+        ROS_INFO_STREAM((int)packet[i]);
+      
       // Check amount of data to read
       PacketHeaderT *header = (PacketHeaderT*)packet.data(); // Cast buffer to header
       long packet_size = header->lPacketSize;
       
-      if((ready_bytes != header_size) || (packet_size < header_size) || (packet_size > MAX_PACKET_SIZE))
+      if((packet_size < header_size) || (packet_size > MAX_PACKET_SIZE))
       {
-        ROS_WARN_STREAM("Indicated packet size is " << packet_size << ", discarding");
-        buffer.clear();
+        ROS_WARN_STREAM("Indicated packet size " << packet_size << ", is out of bounds. Discarding.");
         continue;
       }
       
@@ -221,6 +223,8 @@ protected:
       bool success = recv_.ReceiveData(packet.data(), packet.size());
       if(!success)
         ROS_ERROR_STREAM("Failed to parse Emscon data");
+      else
+        ROS_INFO_STREAM("Successful read");
     }
   }
   
@@ -235,17 +239,7 @@ protected:
     cmd_.SetMeasurementMode(ES_MM_ContinuousTime);
     cmd_.SetContinuousTimeModeParams(20, 0, false, ES_RT_Sphere);
     
-    //~ = cmd_.GetReflectors();
-    //~ int id;
-    //~ for string in var
-    //~ {
-      //~ if string == "CCR-1_5IN_LEICAR"
-      //~ {
-        //~ id = num;
-        //~ break;
-      //~ }
-    //~ }
-    cmd_.SetReflector(0);
+    findReflector("CCR-1_5IN_LEICAR");
     
     cmd_.GoBirdBath();
     
@@ -266,7 +260,22 @@ protected:
   
   void findReflector(std::string reflector_name)
   {
+    ROS_INFO_STREAM("Getting reflectors...");
+    cmd_.GetReflectors();
     
+    //~ = cmd_.GetReflectors();
+    //~ int id;
+    //~ for string in var
+    //~ {
+      //~ if string == "CCR-1_5IN_LEICAR"
+      //~ {
+        //~ id = num;
+        //~ break;
+      //~ }
+    //~ }
+    //~ cmd_.SetReflector(0);
+    
+    return;
   }
 };
 
