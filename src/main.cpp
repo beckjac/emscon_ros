@@ -71,7 +71,6 @@ protected:
   ros::NodeHandlePtr node_handle_;
 
   // general and unsolicited answer handlers:
-
   void OnCommandAnswer(const BasicCommandRT& cmd) // called for every command
   {
     printf("OnCommandAnswer: cmd=%d, status=%d, packet_type=%d, packet_size=%d\n", 
@@ -89,43 +88,15 @@ protected:
       error.command, error.status, error.packetHeader.type, error.packetHeader.lPacketSize);
   }
 
-  // Particular command/data handlers (as far as affected by this sample):
-
-  /**
-  // For conventional 3D trackers
-  // show 3 coords only, much other result data available, see SingleMeasResultT
-  void OnSingleMeasurementAnswer(const SingleMeasResultT& singleMeas) 
-    {printf("OnSingleMeasurementAnswer(%lf, %lf, %lf)\n", singleMeas.dVal1, singleMeas.dVal2, singleMeas.dVal3);}
-  **/
-
-  // Appropriate 6DOF supporting hardware required.
-  // Show 3 coords and 3 rotation angels only, many other result data available, see ProbeStationaryResultT.
-  void OnStationaryProbeMeasurementAnswer(const ProbeStationaryResultT& statProbeMeas)
+  // Particular command/data handlers:
+  void OnMultiMeasurementAnswer(const MultiMeasResultT& multiMeas)
   {
-    printf("Position(%lf, %lf, %lf)\n", statProbeMeas.dPosition1, statProbeMeas.dPosition2, statProbeMeas.dPosition3);
-    printf("RotationAngles(%lf, %lf, %lf)\n", statProbeMeas.dRotationAngleX, statProbeMeas.dRotationAngleY, statProbeMeas.dRotationAngleZ);
-    const double q0 = statProbeMeas.dQuaternion0;
-    const double q1 = statProbeMeas.dQuaternion1;
-    const double q2 = statProbeMeas.dQuaternion2;
-    const double q3 = statProbeMeas.dQuaternion3;
-    printf("Quaternion(%lf, %lf, %lf, %lf)\n", q0, q1, q2, q3);
-    const double R00 = q0*q0+q1*q1-q2*q2-q3*q3;
-    const double R01 = 2*(q1*q2-q0*q3);
-    const double R02 = 2*(q1*q3+q0*q2);
-    const double R10 = 2*(q1*q2+q0*q3);
-    const double R11 = q0*q0-q1*q1+q2*q2-q3*q3;
-    const double R12 = 2*(q2*q3-q0*q1);
-    const double R20 = 2*(q1*q3-q0*q2);
-    const double R21 = 2*(q3*q2+q0*q1);
-    const double R22 = q0*q0-q1*q1-q2*q2+q3*q3;
-    printf("x-Axis(%lf, %lf, %lf)\n", R00, R10, R20);
-    printf("y-Axis(%lf, %lf, %lf)\n", R01, R11, R21);
-    printf("z-Axis(%lf, %lf, %lf)\n", R02, R12, R22);
-  }
-  
-  void OnContinuousProbeMeasurementAnswer(const ProbeContinuousResultT& continuousProbeMeas)
-  {
-    ROS_INFO_STREAM("Probe");
+    ROS_INFO_STREAM("Measurement with " << multiMeas.lNumberOfResults << " results");
+    for(int i=0; i<multiMeas.lNumberOfResults; i++)
+    {
+      MeasValueT pt = multiMeas.data[i];
+      ROS_INFO_STREAM("t1: " << pt.lTime1 << ", t2: " << pt.lTime2 << ", v1: " << pt.dVal1 << ", v2: " << pt.dVal2 << ", v3: " << pt.dVal3);
+    } 
   }
 
   void OnSetUnitsAnswer() {printf("OnSetUnitsAnswer()\n");} // just a confirmation when succeeded
