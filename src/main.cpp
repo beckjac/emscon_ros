@@ -43,7 +43,9 @@ class EmsconReceive: public CESAPIReceive
 {
 public:
   EmsconReceive(ros::NodeHandlePtr node_handle) : node_handle_(node_handle)
-  {;} 
+  {
+    server_ready_ = false;
+  } 
   ~EmsconReceive() {;} 
 
   // make protected ReceiveData() accessible from outside (i.e. define a public overhead)
@@ -57,6 +59,7 @@ public:
 
   ////////////////////////////////////////////////////////////////////
   // override virtual functions of those answers you are interested in:
+  bool server_ready_;
 
 protected:
   // Members
@@ -68,6 +71,11 @@ protected:
   {
     printf("OnCommandAnswer: cmd=%d, status=%d, packet_type=%d, packet_size=%d\n", 
       cmd.command, cmd.status, cmd.packetHeader.type, cmd.packetHeader.lPacketSize);
+    
+    if(cmd.status == ES_RS_AllOK)
+      server_ready_ = true;
+    else
+      server_ready_ = false;
   }
 
   void OnErrorAnswer(const ErrorResponseT& error) // called on unsolicited error, e.g. beam break
@@ -109,6 +117,11 @@ protected:
     printf("y-Axis(%lf, %lf, %lf)\n", R01, R11, R21);
     printf("z-Axis(%lf, %lf, %lf)\n", R02, R12, R22);
   }
+  
+  void OnContinuousProbeMeasurementAnswer(const ProbeContinuousResultT& continuousProbeMeas)
+  {
+    ROS_INFO_STREAM("Probe");
+  }
 
   void OnSetUnitsAnswer() {printf("OnSetUnitsAnswer()\n");} // just a confirmation when succeeded
 
@@ -149,15 +162,16 @@ public:
   EmsconInterface(boost::shared_ptr<boost::asio::ip::tcp::socket> socket, ros::NodeHandlePtr node_handle) :
   cmd_(socket), recv_(node_handle), socket_(socket)
   {
+    // Store node handle
+    node_handle_ = node_handle;
+    
     // Spawn reciever thread
     recv_thread_ = boost::thread(boost::bind(&EmsconInterface::receivePackets, this));
     
     // Initialize laser
     initLaser(node_handle);
-    
-    // Start collecting data
-    ROS_INFO_STREAM("Interface online");
   }
+  
   ~EmsconInterface()
   {
     // Stop thread
@@ -168,6 +182,7 @@ protected:
   // Members
   EmsconCommand cmd_;
   EmsconReceive recv_;
+  ros::NodeHandlePtr node_handle_;
   
   boost::shared_ptr<boost::asio::ip::tcp::socket> socket_;
   boost::thread recv_thread_;
@@ -223,25 +238,49 @@ protected:
     }
   }
   
+  // Blocks until the server sends the OK status
+  void waitForServer()
+  {
+    while(!recv_.server_ready_);
+    
+    recv_.server_ready_ = false;
+  }
+  
   // Reads parameters from node handle to initialize laser
   void initLaser(ros::NodeHandlePtr node_handle)
   {
+    ROS_INFO_STREAM("Setting units");
     cmd_.SetUnits(ES_LU_Meter, ES_AU_Radian, ES_TU_Celsius, ES_PU_MmHg, ES_HU_RH);
+    waitForServer();
     //cmd_.SetEnvironmentParams(); // Just use defaults
     
+    ROS_INFO_STREAM("Initializing tracker");
     cmd_.Initialize();
+    waitForServer();
     
+    ROS_INFO_STREAM("Setting measurement mode");
     cmd_.SetMeasurementMode(ES_MM_ContinuousTime);
+    waitForServer();
     cmd_.SetContinuousTimeModeParams(20, 0, false, ES_RT_Sphere);
+    waitForServer();
     
-    findReflector("CCR-1_5IN_LEICAR");
+    std::string reflector_name = node_handle_->param<std::string>("reflector_name", "CCR-1.5in");
+    ROS_INFO_STREAM("Finding reflector '" << reflector_name << "'");
+    findReflector(reflector_name);
     
+    ROS_INFO_STREAM("Moving to birdbath");
     cmd_.GoBirdBath();
+    waitForServer();
     
+    ROS_INFO_STREAM("Setting coordinate parameters");
     cmd_.SetStationOrientationParams(0, 0, 0, 0, 0, 0);
+    waitForServer();
     cmd_.SetTransformationParams(0, 0, 0, 0, 0, 0, 1);
+    waitForServer();
     cmd_.SetCoordinateSystemType(ES_CS_RHR);
+    waitForServer();
     
+    ROS_INFO_STREAM("Applying system settings");
     SystemSettingsDataT settings;
     settings.bApplyTransformationParams = true;
     settings.bApplyStationOrientationParams = true;
@@ -249,20 +288,25 @@ protected:
     settings.bSendUnsolicitedMessages = true;
     settings.bSendReflectorPositionData = false;
     cmd_.SetSystemSettings(settings);
+    waitForServer();
     
+    ROS_INFO_STREAM("Beginning measurement");
     cmd_.StartMeasurement();
+    waitForServer();
+    
+    ROS_INFO_STREAM("Tracker ready");
   }
   
   void findReflector(std::string reflector_name)
   {
-    ROS_INFO_STREAM("Getting reflectors...");
     cmd_.GetReflectors();
+    waitForServer();
     
     //~ = cmd_.GetReflectors();
     //~ int id;
     //~ for string in var
     //~ {
-      //~ if string == "CCR-1_5IN_LEICAR"
+      //~ if string == reflector_name
       //~ {
         //~ id = num;
         //~ break;
