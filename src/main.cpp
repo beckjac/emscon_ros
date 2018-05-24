@@ -45,6 +45,7 @@ public:
   EmsconReceive(ros::NodeHandlePtr node_handle) : node_handle_(node_handle)
   {
     server_ready_ = false;
+    got_all_reflectors_ = false;
   } 
   ~EmsconReceive() {;} 
 
@@ -60,6 +61,10 @@ public:
   ////////////////////////////////////////////////////////////////////
   // override virtual functions of those answers you are interested in:
   bool server_ready_;
+  
+  bool got_all_reflectors_;
+  std::vector<std::string> reflector_names_;
+  std::vector<int> reflector_ids_;
 
 protected:
   // Members
@@ -140,9 +145,12 @@ protected:
 
     for (int i = 0; i < size; i++)
       buf[i] = cReflectorName[i] & 0xff;
-      
-    printf("OnGetReflectorsAnswer(): total=%d, id=%d, type=%d, offset=%lf, name=%s\n", 
-      iTotalReflectors, iInternalReflectorId, targetType, dSurfaceOffset, buf);
+    
+    reflector_names_.push_back(buf);
+    reflector_ids_.push_back(iInternalReflectorId);
+    
+    if(reflector_names_.size() == iTotalReflectors)
+      got_all_reflectors_ = true;
   }
    
   void OnSetSearchParamsAnswer() {printf("OnSetSearchParamsAnswer() \n");} // just a confirmation when succeeded
@@ -302,17 +310,29 @@ protected:
     cmd_.GetReflectors();
     waitForServer();
     
-    //~ = cmd_.GetReflectors();
-    //~ int id;
-    //~ for string in var
-    //~ {
-      //~ if string == reflector_name
-      //~ {
-        //~ id = num;
-        //~ break;
-      //~ }
-    //~ }
-    //~ cmd_.SetReflector(0);
+    // Wait until we get all reflectors back
+    while(!recv_.got_all_reflectors_);
+    
+    // Search for reflector
+    int id = -1;
+    for(int i=1; i<recv_.reflector_names_.size(); i++)
+    {
+      ROS_INFO_STREAM(recv_.reflector_names_[i]);
+      if(recv_.reflector_names_[i] == reflector_name)
+      {
+        id = recv_.reflector_ids_[i];
+        break;
+      }
+    }
+    
+    if(id == -1)
+    {
+      ROS_ERROR_STREAM("Reflector is not known");
+    }
+    
+    // Set the reflector ID
+    cmd_.SetReflector(id);
+    waitForServer();
     
     return;
   }
