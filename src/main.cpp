@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <ros/ros.h>
+#include <geometry_msgs/PointStamped.h>
 
 #include <boost/asio.hpp> // Provides sockets
 #include <boost/thread.hpp>
@@ -46,6 +47,9 @@ public:
   {
     server_ready_ = false;
     got_all_reflectors_ = false;
+    clock_set_ = false;
+    
+    pub_ = node_handle_->advertise<geometry_msgs::PointStamped>("laser_measurements", 10);
   } 
   ~EmsconReceive() {;} 
 
@@ -65,14 +69,19 @@ public:
   bool got_all_reflectors_;
   std::vector<std::string> reflector_names_;
   std::vector<int> reflector_ids_;
+  
+  bool clock_set_;
+  ros::Time clock_offset_;
 
 protected:
   // Members
   ros::NodeHandlePtr node_handle_;
+  ros::Publisher pub_;
 
   // general and unsolicited answer handlers:
   void OnCommandAnswer(const BasicCommandRT& cmd) // called for every command
   {
+    // TODO: log to ROS debug
     printf("OnCommandAnswer: cmd=%d, status=%d, packet_type=%d, packet_size=%d\n", 
       cmd.command, cmd.status, cmd.packetHeader.type, cmd.packetHeader.lPacketSize);
     
@@ -91,12 +100,32 @@ protected:
   // Particular command/data handlers:
   void OnMultiMeasurementAnswer(const MultiMeasResultT& multiMeas)
   {
-    ROS_INFO_STREAM("Measurement with " << multiMeas.lNumberOfResults << " results");
-    for(int i=0; i<multiMeas.lNumberOfResults; i++)
+    long n = multiMeas.lNumberOfResults;
+    
+    // Synchronize time best we can
+    if(!clock_set_)
+    {
+      MeasValueT last_pt = multiMeas.data[n-1];
+      ros::Duration offset(last_pt.lTime1, 1000*last_pt.lTime2);
+      clock_offset_ = ros::Time::now() - offset;
+      
+      clock_set_ = true;
+    }
+    
+    // Publish data
+    for(int i=0; i<n; i++)
     {
       MeasValueT pt = multiMeas.data[i];
-      ROS_INFO_STREAM("t1: " << pt.lTime1 << ", t2: " << pt.lTime2 << ", v1: " << pt.dVal1 << ", v2: " << pt.dVal2 << ", v3: " << pt.dVal3);
-    } 
+      
+      geometry_msgs::PointStamped msg;
+      msg.header.stamp = clock_offset_ + ros::Duration(pt.lTime1, 1000*pt.lTime2);
+      msg.point.x = pt.dVal1;
+      msg.point.y = pt.dVal2;
+      msg.point.z = pt.dVal3;
+      
+      pub_.publish(msg);
+    }
+    
   }
 
   void OnSetUnitsAnswer() {printf("OnSetUnitsAnswer()\n");} // just a confirmation when succeeded
