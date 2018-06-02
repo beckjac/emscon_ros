@@ -81,8 +81,7 @@ protected:
   // general and unsolicited answer handlers:
   void OnCommandAnswer(const BasicCommandRT& cmd) // called for every command
   {
-    // TODO: log to ROS debug
-    printf("OnCommandAnswer: cmd=%d, status=%d, packet_type=%d, packet_size=%d\n", 
+    ROS_DEBUG("OnCommandAnswer: cmd=%d, status=%d, packet_type=%d, packet_size=%d\n", 
       cmd.command, cmd.status, cmd.packetHeader.type, cmd.packetHeader.lPacketSize);
     
     if(cmd.status == ES_RS_AllOK)
@@ -93,7 +92,7 @@ protected:
 
   void OnErrorAnswer(const ErrorResponseT& error) // called on unsolicited error, e.g. beam break
   {
-    printf("OnErrorAnswer: cmd=%d, status=%d, packet_type=%d, packet_size=%d\n", 
+    ROS_ERROR("Emscon error: cmd=%d, status=%d, packet_type=%d, packet_size=%d\n", 
       error.command, error.status, error.packetHeader.type, error.packetHeader.lPacketSize);
   }
 
@@ -128,12 +127,6 @@ protected:
     
   }
 
-  void OnSetUnitsAnswer() {printf("OnSetUnitsAnswer()\n");} // just a confirmation when succeeded
-
-  void OnGoBirdBathAnswer() {printf("OnGoBirdBathAnswer()\n");} // just a confirmation when succeeded
-
-  void OnSetMeasurementModeAnswer() {printf("OnSetMeasurementModeAnswer() \n");} // just a confirmation when succeeded
-
   void OnGetReflectorsAnswer(const int iTotalReflectors,
                              const int iInternalReflectorId,
                              const ES_TargetType targetType,
@@ -151,13 +144,6 @@ protected:
     
     if(reflector_names_.size() == iTotalReflectors)
       got_all_reflectors_ = true;
-  }
-   
-  void OnSetSearchParamsAnswer() {printf("OnSetSearchParamsAnswer() \n");} // just a confirmation when succeeded
-
-  void OnGetSearchParamsAnswer(const SearchParamsDataT& searchParams) 
-  {
-    printf("OnGetSearchParamsAnswer(SearchRadius=%lf, TimeOut=%ld) \n", searchParams.dSearchRadius, searchParams.lTimeOut);
   }
 
   // Note: if a command returns with other then ES_AllOK status (which is shown by OnCommandAnswer()), 
@@ -269,7 +255,7 @@ protected:
     ROS_INFO_STREAM("Setting measurement mode");
     cmd_.SetMeasurementMode(ES_MM_ContinuousTime);
     waitForServer();
-    cmd_.SetContinuousTimeModeParams(20, 0, false, ES_RT_Sphere);
+    cmd_.SetContinuousTimeModeParams(1, 0, false, ES_RT_Sphere);
     waitForServer();
     
     std::string reflector_name = node_handle_->param<std::string>("reflector_name", "CCR-1.5in");
@@ -314,6 +300,7 @@ protected:
     while(!recv_.got_all_reflectors_);
     
     // Search for reflector
+    ROS_INFO_STREAM("Reflectors available:");
     int id = -1;
     for(int i=1; i<recv_.reflector_names_.size(); i++)
     {
