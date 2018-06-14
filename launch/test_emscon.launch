@@ -1,6 +1,6 @@
 <launch>
 
-  <!-- joint_trajectory_action: provides actionlib interface for high-level robot control -->
+  <!-- Launch the Emscon node -->
   <node pkg="emscon_ros" type="emscon_ros_node" name="emscon_ros_node" output="screen"/>
 
 </launch>
